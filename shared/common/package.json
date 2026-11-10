@@ -14,11 +14,11 @@
     "test:integration": "vitest run tests/integration"
   },
   "dependencies": {
-    "@opentelemetry/api": "^1.9.0",
-    "@opentelemetry/auto-instrumentations-node": "^0.56.0",
-    "@opentelemetry/exporter-trace-otlp-http": "^0.57.2",
-    "@opentelemetry/instrumentation": "^0.57.2",
-    "@opentelemetry/sdk-node": "^0.57.2",
+    "@opentelemetry/api": "^1.10.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.83.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.301.0",
+    "@opentelemetry/instrumentation": "^0.301.0",
+    "@opentelemetry/sdk-node": "^0.301.0",
     "amqplib": "^0.10.5",
     "express": "^5.1.0",
     "helmet": "^8.0.0",
