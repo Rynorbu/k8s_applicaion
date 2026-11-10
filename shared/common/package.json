@@ -19,7 +19,7 @@
     "@opentelemetry/exporter-trace-otlp-http": "^0.57.2",
     "@opentelemetry/instrumentation": "^0.57.2",
     "@opentelemetry/sdk-node": "^0.57.2",
-    "amqplib": "^0.10.5",
+    "amqplib": "^2.2.1",
     "express": "^5.1.0",
     "helmet": "^8.0.0",
     "ioredis": "^5.4.2",
