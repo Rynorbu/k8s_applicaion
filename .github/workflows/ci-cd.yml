@@ -169,7 +169,7 @@ jobs:
           else echo "dockerfile=services/$COMPONENT/Dockerfile" >> "$GITHUB_OUTPUT"; fi
           echo "image=ghcr.io/$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')/spendwise/$COMPONENT" >> "$GITHUB_OUTPUT"
       - name: Docker build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ${{ steps.meta.outputs.dockerfile }}
