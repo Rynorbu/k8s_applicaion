@@ -8,7 +8,7 @@ RUN npm ci --workspace=frontend --include-workspace-root=false --no-audit --no-f
 COPY frontend frontend
 RUN npm run build --workspace=frontend
 
-FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime
+FROM nginxinc/nginx-unprivileged:1.31-alpine AS runtime
 ENV GATEWAY_UPSTREAM=api-gateway:8080
 COPY frontend/nginx.conf /etc/nginx/templates/default.conf.template
 COPY --from=build /app/frontend/dist /usr/share/nginx/html
