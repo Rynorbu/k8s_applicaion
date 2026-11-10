@@ -1,0 +1,25 @@
+# AppProject: the guard-rails for everything Argo CD deploys for SpendWise -
+# which Git/Helm repositories may be used and which namespaces may be written to.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: spendwise
+  namespace: argocd
+spec:
+  description: DSO202 final project - SpendWise microservices, platform and monitoring
+  sourceRepos:
+    - https://github.com/YOUR-GITHUB-USERNAME/spendwise.git
+    - https://prometheus-community.github.io/helm-charts
+    - https://kubernetes-sigs.github.io/metrics-server/
+  destinations:
+    - { server: https://kubernetes.default.svc, namespace: spendwise }
+    - { server: https://kubernetes.default.svc, namespace: monitoring }
+    - { server: https://kubernetes.default.svc, namespace: kube-system }
+    - { server: https://kubernetes.default.svc, namespace: argocd }
+  # kube-prometheus-stack and prometheus-adapter install CRDs, ClusterRoles and APIServices.
+  clusterResourceWhitelist:
+    - { group: "*", kind: "*" }
+  namespaceResourceWhitelist:
+    - { group: "*", kind: "*" }
+  orphanedResources:
+    warn: true

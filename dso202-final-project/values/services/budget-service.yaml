@@ -1,0 +1,8 @@
+# budget-service - values for the shared chart charts/microservice (one file per service).
+# Argo CD's ApplicationSet creates one Application named "budget-service" from this file.
+image:
+  repository: spendwise/budget-service
+  tag: dev
+port: 4006
+database: "budgets"
+replicaCount: 1

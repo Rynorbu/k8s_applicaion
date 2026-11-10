@@ -1,0 +1,232 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+  REGISTRY: ghcr.io
+  OTEL_SDK_DISABLED: 'true'
+  LOG_LEVEL: silent
+
+jobs:
+  # Checkout -> Install dependencies -> Lint -> Unit tests
+  lint-and-unit-test:
+    name: Lint & unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Lint
+        run: npm run lint
+      - name: Unit tests
+        run: npm run test:unit
+      - name: Build frontend
+        run: npm run build --workspace=frontend
+
+  # Integration tests against real PostgreSQL + RabbitMQ
+  integration-test:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: it
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+      rabbitmq:
+        image: rabbitmq:3.13-alpine
+        ports: ['5672:5672']
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping" --health-interval 10s --health-timeout 10s --health-retries 12
+    env:
+      TEST_DATABASE_URL: postgres://postgres:test@localhost:5432/it
+      TEST_RABBITMQ_URL: amqp://guest:guest@localhost:5672
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Integration tests
+        run: npm run test:integration
+
+  # Security scan: dependencies, secrets, Dockerfile/Kubernetes misconfigurations (SAST: codeql.yml)
+  security-scan:
+    name: Security scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: npm audit (production dependencies)
+        run: npm audit --omit=dev --audit-level=high
+      - name: Secret scanning (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scanners: vuln,secret,misconfig
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          format: sarif
+          output: trivy-fs.sarif
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+
+  helm-validate:
+    name: Validate Kubernetes manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+      - name: Helm lint (dev + prod)
+        run: |
+          helm lint kubernetes/helm/spendwise -f kubernetes/helm/spendwise/values-dev.yaml
+          helm lint kubernetes/helm/spendwise -f kubernetes/helm/spendwise/values-prod.yaml
+      - name: kubeconform schema validation
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz
+          helm template spendwise kubernetes/helm/spendwise -f kubernetes/helm/spendwise/values-prod.yaml -n spendwise \
+            | ./kubeconform -strict -summary -kubernetes-version 1.30.0
+
+  # Docker build -> Container scan -> Push images
+  build-scan-push:
+    name: Build, scan & push (${{ matrix.component }})
+    needs: [lint-and-unit-test, integration-test, security-scan, helm-validate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        component:
+          - api-gateway
+          - auth-service
+          - user-service
+          - expense-service
+          - income-service
+          - category-service
+          - budget-service
+          - recurring-service
+          - goal-service
+          - analytics-service
+          - notification-service
+          - report-service
+          - search-service
+          - currency-service
+          - audit-service
+          - ai-service
+          - file-service
+          - frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Resolve image metadata
+        id: meta
+        env:
+          OWNER: ${{ github.repository_owner }}
+          COMPONENT: ${{ matrix.component }}
+        run: |
+          if [ "$COMPONENT" = "frontend" ]; then echo "dockerfile=frontend/Dockerfile" >> "$GITHUB_OUTPUT";
+          else echo "dockerfile=services/$COMPONENT/Dockerfile" >> "$GITHUB_OUTPUT"; fi
+          echo "image=ghcr.io/$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')/spendwise/$COMPONENT" >> "$GITHUB_OUTPUT"
+      - name: Docker build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ steps.meta.outputs.dockerfile }}
+          load: true
+          tags: ${{ steps.meta.outputs.image }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+      - name: Container scan (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.meta.outputs.image }}:${{ github.sha }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
+      - name: Log in to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push images
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+        run: |
+          docker tag "$IMAGE:${GITHUB_SHA}" "$IMAGE:latest"
+          docker push "$IMAGE:${GITHUB_SHA}"
+          docker push "$IMAGE:latest"
+
+  # GitOps: Argo CD watches the repository; committing the new tag *is* the deployment.
+  gitops-update:
+    name: Update GitOps manifests
+    needs: [build-scan-push]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pin image tag in values-prod.yaml
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.6/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          REGISTRY_PATH="ghcr.io/$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')/spendwise"
+          TAG="$GITHUB_SHA" REG="$REGISTRY_PATH" yq -i '.image.tag = strenv(TAG) | .image.registry = strenv(REG)' kubernetes/helm/spendwise/values-prod.yaml
+      - name: Commit and push
+        run: |
+          git config user.name "spendwise-ci"
+          git config user.email "ci@users.noreply.github.com"
+          git add kubernetes/helm/spendwise/values-prod.yaml
+          git diff --cached --quiet && exit 0
+          git commit -m "chore(release): deploy ${GITHUB_SHA::7} [skip ci]"
+          git push

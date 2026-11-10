@@ -1,0 +1,17 @@
+**/node_modules
+**/dist
+**/coverage
+**/.env
+**/tests
+**/e2e
+**/data
+**/playwright-report
+**/test-results
+.git
+.github
+docs
+kubernetes
+monitoring
+infrastructure
+tests
+*.md

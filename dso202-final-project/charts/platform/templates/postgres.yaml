@@ -1,0 +1,138 @@
+{{- $pg := .Values.postgres -}}
+# PostgreSQL as a StatefulSet: stable name (postgres-0), stable storage (PVC data-postgres-0)
+# that survives pod restarts, and a headless Service for the stable network identity.
+# One server, 16 databases: each service has its own database and login role
+# (database-per-service) created by the init script below on first start.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  labels: {{- include "platform.labels" . | nindent 4 }}
+data:
+  01-create-databases.sh: |-
+{{ .Files.Get "files/01-create-databases.sh" | indent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-headless
+  labels: {{- include "platform.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector: { app.kubernetes.io/name: postgres }
+  ports: [{ name: postgres, port: 5432, targetPort: postgres }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/name: postgres
+spec:
+  selector: { app.kubernetes.io/name: postgres }
+  ports:
+    - { name: postgres, port: 5432, targetPort: postgres }
+    {{- if $pg.exporter.enabled }}
+    - { name: metrics, port: 9187, targetPort: metrics }
+    {{- end }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/name: postgres
+spec:
+  serviceName: postgres-headless
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: postgres }
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  template:
+    metadata:
+      labels:
+        {{- include "platform.labels" . | nindent 8 }}
+        app.kubernetes.io/name: postgres
+    spec:
+      automountServiceAccountToken: false
+      {{- with .Values.statefulNodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: 60
+      securityContext: { fsGroup: 70, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: postgres
+          image: {{ $pg.image }}
+          args: ["-c", "max_connections={{ $pg.maxConnections }}"]
+          ports: [{ name: postgres, containerPort: 5432 }]
+          env:
+            - { name: POSTGRES_USER, value: postgres }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+            {{- include "platform.secretEnv" (list "POSTGRES_PASSWORD" .Values.secretName "postgres-password") | nindent 12 }}
+            {{- include "platform.secretEnv" (list "SERVICE_DB_PASSWORD" .Values.secretName "service-db-password") | nindent 12 }}
+          startupProbe:
+            exec: { command: [sh, -c, "pg_isready -h 127.0.0.1 -U postgres"] }
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            # "files" is the last database the init script creates = init finished.
+            exec: { command: [sh, -c, "pg_isready -h 127.0.0.1 -U postgres -d files"] }
+            periodSeconds: 5
+          livenessProbe:
+            exec: { command: [sh, -c, "pg_isready -h 127.0.0.1 -U postgres"] }
+            periodSeconds: 15
+            failureThreshold: 4
+          resources: {{- toYaml $pg.resources | nindent 12 }}
+          securityContext: { allowPrivilegeEscalation: false }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+            - { name: init, mountPath: /docker-entrypoint-initdb.d }
+        {{- if $pg.exporter.enabled }}
+        # Sidecar exporting PostgreSQL metrics (connections, DB size, ...) on :9187/metrics.
+        - name: exporter
+          image: {{ $pg.exporter.image }}
+          ports: [{ name: metrics, containerPort: 9187 }]
+          env:
+            - { name: DATA_SOURCE_URI, value: "127.0.0.1:5432/postgres?sslmode=disable" }
+            - { name: DATA_SOURCE_USER, value: postgres }
+            {{- include "platform.secretEnv" (list "DATA_SOURCE_PASS" .Values.secretName "postgres-password") | nindent 12 }}
+          resources:
+            requests: { cpu: 10m, memory: 24Mi }
+            limits: { cpu: 100m, memory: 64Mi }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+        {{- end }}
+      volumes:
+        - name: init
+          configMap: { name: postgres-init, defaultMode: 0555 }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with .Values.storageClass }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources: { requests: { storage: {{ $pg.storage }} } }
+{{- if $pg.exporter.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: postgres
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    {{- toYaml .Values.metrics.serviceMonitorLabels | nindent 4 }}
+spec:
+  selector:
+    matchLabels: { app.kubernetes.io/name: postgres }
+  endpoints:
+    - { port: metrics, interval: 30s }
+{{- end }}

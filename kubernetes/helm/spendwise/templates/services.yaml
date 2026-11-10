@@ -1,0 +1,219 @@
+{{- /*
+  One Deployment + Service (+ HPA, PDB, PVC) per microservice, rendered from `.Values.services`.
+  Every service is independently deployable: its own image, config, probes and scaling.
+*/ -}}
+{{- $root := . -}}
+{{- $secret := include "spendwise.secretName" . -}}
+{{- range $name, $svc := .Values.services }}
+{{- $replicas := default $root.Values.defaults.replicas $svc.replicas -}}
+{{- /* explicit override (sprig merge would treat `enabled: false` as empty) */ -}}
+{{- $hpa := deepCopy $root.Values.defaults.hpa -}}
+{{- range $k, $v := (default dict $svc.hpa) }}{{- $_ := set $hpa $k $v -}}{{- end }}
+{{- $resources := default $root.Values.defaults.resources $svc.resources }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "spendwise.labels" $root | nindent 4 }}
+    app.kubernetes.io/name: {{ $name }}
+    app.kubernetes.io/component: microservice
+spec:
+  {{- if not $hpa.enabled }}
+  replicas: {{ $replicas }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $name }}
+  strategy:
+    {{- if $svc.storage }}
+    type: Recreate   # RWO volume; use RWX/S3 storage to scale horizontally
+    {{- else }}
+    type: RollingUpdate
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
+    {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "spendwise.labels" $root | nindent 8 }}
+        app.kubernetes.io/name: {{ $name }}
+        app.kubernetes.io/component: microservice
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "{{ $svc.port }}"
+        prometheus.io/path: /metrics
+        checksum/config: {{ include (print $root.Template.BasePath "/config.yaml") $root | sha256sum }}
+    spec:
+      serviceAccountName: spendwise
+      automountServiceAccountToken: false
+      securityContext: {{- toYaml $root.Values.podSecurityContext | nindent 8 }}
+      {{- with $root.Values.image.pullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: 30
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: {{ $name }}
+      containers:
+        - name: {{ $name }}
+          image: {{ include "spendwise.image" (list $root $name $svc.tag) }}
+          imagePullPolicy: {{ $root.Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $svc.port }}
+          envFrom:
+            - configMapRef:
+                name: spendwise-config
+          env:
+            - name: SERVICE_NAME
+              value: {{ $name }}
+            - name: PORT
+              value: "{{ $svc.port }}"
+            - name: OTEL_SERVICE_NAME
+              value: {{ $name }}
+            - name: POD_NAME
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "service.instance.id=$(POD_NAME),deployment.environment={{ $root.Values.global.environment }}"
+            {{- include "spendwise.secretEnv" (list "INTERNAL_API_TOKEN" $secret "internal-api-token") | nindent 12 }}
+            {{- include "spendwise.secretEnv" (list "RABBITMQ_USER" $secret "rabbitmq-user") | nindent 12 }}
+            {{- include "spendwise.secretEnv" (list "RABBITMQ_PASSWORD" $secret "rabbitmq-password") | nindent 12 }}
+            {{- include "spendwise.secretEnv" (list "REDIS_PASSWORD" $secret "redis-password") | nindent 12 }}
+            - name: RABBITMQ_URL
+              value: "amqp://$(RABBITMQ_USER):$(RABBITMQ_PASSWORD)@{{ $root.Values.endpoints.rabbitmqHost }}:5672"
+            - name: REDIS_URL
+              value: "redis://:$(REDIS_PASSWORD)@{{ $root.Values.endpoints.redisHost }}:6379"
+            {{- if $svc.database }}
+            {{- include "spendwise.secretEnv" (list "DB_PASSWORD" $secret "service-db-password") | nindent 12 }}
+            - name: DATABASE_URL
+              value: "postgres://{{ $svc.database }}_svc:$(DB_PASSWORD)@{{ $root.Values.endpoints.postgresHost }}:{{ $root.Values.endpoints.postgresPort }}/{{ $svc.database }}"
+            {{- end }}
+            {{- if eq $name "auth-service" }}
+            {{- include "spendwise.secretEnv" (list "JWT_PRIVATE_KEY" $secret "jwt-private-key") | nindent 12 }}
+            {{- end }}
+            {{- if eq $name "ai-service" }}
+            {{- include "spendwise.secretEnv" (list "ANTHROPIC_API_KEY" $secret "anthropic-api-key" true) | nindent 12 }}
+            {{- end }}
+            {{- if eq $name "notification-service" }}
+            {{- include "spendwise.secretEnv" (list "SMTP_PASSWORD" $secret "smtp-password" true) | nindent 12 }}
+            {{- end }}
+            {{- with $svc.storage }}
+            - name: {{ .env }}
+              value: {{ .mountPath }}
+            {{- end }}
+            {{- range $k, $v := $svc.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          startupProbe:
+            httpGet: { path: /health/live, port: http }
+            periodSeconds: 3
+            failureThreshold: 40
+          livenessProbe:
+            httpGet: { path: /health/live, port: http }
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: { path: /health/ready, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources: {{- toYaml $resources | nindent 12 }}
+          securityContext: {{- toYaml $root.Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- with $svc.storage }}
+            - name: data
+              mountPath: {{ .mountPath }}
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 64Mi }
+        {{- if $svc.storage }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ $name }}-data
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "spendwise.labels" $root | nindent 4 }}
+    app.kubernetes.io/name: {{ $name }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ $name }}
+  ports:
+    - name: http
+      port: {{ $svc.port }}
+      targetPort: http
+{{- if $hpa.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $name }}
+  labels: {{- include "spendwise.labels" $root | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $name }}
+  minReplicas: {{ $hpa.minReplicas }}
+  maxReplicas: {{ $hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: {{ $hpa.targetCPUUtilization }} }
+    - type: Resource
+      resource:
+        name: memory
+        target: { type: Utilization, averageUtilization: {{ $hpa.targetMemoryUtilization }} }
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+  labels: {{- include "spendwise.labels" $root | nindent 4 }}
+spec:
+  minAvailable: {{ $root.Values.defaults.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $name }}
+{{- end }}
+{{- with $svc.storage }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}-data
+  labels: {{- include "spendwise.labels" $root | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- if $root.Values.storageClass }}
+  storageClassName: {{ $root.Values.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .size }}
+{{- end }}
+{{- end }}

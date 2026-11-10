@@ -1,0 +1,28 @@
+# SpendWise Grafana dashboards + Prometheus alert rules (our own chart).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring-extras
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: spendwise
+  source:
+    repoURL: https://github.com/YOUR-GITHUB-USERNAME/spendwise.git
+    targetRevision: main
+    path: dso202-final-project/charts/monitoring-extras
+    helm:
+      releaseName: monitoring-extras
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true
+      - SkipDryRunOnMissingResource=true   # PrometheusRule CRD may not exist yet on first sync
+    retry:
+      limit: 10
+      backoff: { duration: 15s, factor: 2, maxDuration: 3m }

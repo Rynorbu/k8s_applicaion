@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: spendwise-prod
+  namespace: argocd
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+  annotations:
+    # Optional: Argo CD Image Updater can also bump image tags automatically.
+    notifications.argoproj.io/subscribe.on-sync-failed.slack: spendwise-alerts
+spec:
+  project: spendwise
+  source:
+    repoURL: https://github.com/your-org/spendwise.git
+    targetRevision: main
+    path: kubernetes/helm/spendwise
+    helm:
+      valueFiles: [values.yaml, values-prod.yaml]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: spendwise
+  syncPolicy:
+    # Production syncs automatically when the CI gitops job commits a new image tag,
+    # but never prunes resources without review.
+    automated: { prune: false, selfHeal: true }
+    syncOptions: [CreateNamespace=true, ServerSideApply=true, PruneLast=true]
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers: [/spec/replicas]   # owned by the HPA

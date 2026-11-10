@@ -1,0 +1,31 @@
+# frontend - React SPA served by unprivileged nginx (port 8080). Deployed with the same
+# shared chart; it has no database and no back-end connections.
+image:
+  repository: spendwise/frontend
+  tag: dev
+port: 8080
+database: ""
+platformEnv: false
+replicaCount: 2
+env:
+  GATEWAY_UPSTREAM: api-gateway:8080
+health:
+  liveness: /healthz
+  readiness: /healthz
+  startupFailureThreshold: 10
+metrics:
+  enabled: false            # static nginx has no /metrics endpoint
+resources:
+  requests: { cpu: 10m, memory: 16Mi }
+  limits: { cpu: 200m, memory: 64Mi }
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 101            # nginx-unprivileged user
+  runAsGroup: 101
+  fsGroup: 101
+  seccompProfile: { type: RuntimeDefault }
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false   # nginx renders its config template at start-up
+  capabilities: { drop: [ALL] }
+waitFor: []               # no back-end dependencies

@@ -1,0 +1,19 @@
+{
+  "name": "@spendwise/file-service",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Receipt uploads and CSV/Excel transaction imports",
+  "scripts": {
+    "start": "node --import @spendwise/common/tracing src/index.js",
+    "dev": "node --watch --import @spendwise/common/tracing src/index.js",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration --passWithNoTests"
+  },
+  "dependencies": {
+    "@spendwise/common": "1.0.0",
+    "csv-parse": "^5.6.0",
+    "exceljs": "^4.4.0",
+    "multer": "^2.0.1"
+  }
+}

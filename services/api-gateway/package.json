@@ -1,0 +1,21 @@
+{
+  "name": "@spendwise/api-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Edge gateway: routing, JWT verification, rate limiting, CORS, dashboard aggregation (BFF), aggregated API docs",
+  "scripts": {
+    "start": "node --import @spendwise/common/tracing src/index.js",
+    "dev": "node --watch --import @spendwise/common/tracing src/index.js",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration --passWithNoTests"
+  },
+  "dependencies": {
+    "@spendwise/common": "1.0.0",
+    "cors": "^2.8.5",
+    "express-rate-limit": "^7.5.0",
+    "http-proxy-middleware": "^3.0.3",
+    "rate-limit-redis": "^4.2.0",
+    "swagger-ui-express": "^5.0.1"
+  }
+}

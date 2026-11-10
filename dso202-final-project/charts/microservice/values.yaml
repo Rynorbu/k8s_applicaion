@@ -1,0 +1,122 @@
+# Default values for ONE SpendWise microservice.
+# Every service overrides only what differs in values/services/<service>.yaml.
+
+# Name of the Deployment/Service. Empty = the Helm release name (e.g. "expense-service").
+nameOverride: ""
+
+image:
+  repository: spendwise/expense-service   # overridden per service
+  tag: dev                                # CD (scripts/release.sh or CI) bumps this in Git
+  pullPolicy: IfNotPresent                # images are side-loaded into kind with `kind load`
+
+imagePullSecrets: []
+
+replicaCount: 2        # ignored when autoscaling.enabled (the HPA owns the replica count)
+port: 4003             # container port the service listens on
+
+# PostgreSQL database this service OWNS (database-per-service). Empty = no database.
+# The chart builds DATABASE_URL as postgres://<database>_svc:<password>@<postgres>/<database>
+database: ""
+
+# Inject RABBITMQ_URL / REDIS_URL / INTERNAL_API_TOKEN / DATABASE_URL from the platform.
+# Set false for the frontend (static nginx, no back-end connections).
+platformEnv: true
+
+# Objects created by the "platform" release that every service consumes.
+platform:
+  configMapName: spendwise-config
+  secretName: spendwise-secrets
+  postgresHost: postgres
+  postgresPort: 5432
+  rabbitmqHost: rabbitmq
+  redisHost: redis
+
+# host:port pairs an init container waits for before the service starts.
+waitFor:
+  - postgres:5432
+  - rabbitmq:5672
+  - redis:6379
+
+# Extra environment variables taken from the shared secret: [{ name, key, optional }]
+secretEnv: []
+
+# Plain extra environment variables: { NAME: value }
+env: {}
+
+health:
+  liveness: /health/live      # process is alive (restart the container if this fails)
+  readiness: /health/ready    # dependencies OK (remove from Service endpoints if this fails)
+  startupFailureThreshold: 40 # 40 x 3s = up to 2 minutes for migrations on first start
+
+resources:
+  requests: { cpu: 50m, memory: 96Mi }
+  limits: { cpu: 500m, memory: 320Mi }
+
+# Horizontal Pod Autoscaler (autoscaling/v2).
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  # Resource metric (needs metrics-server).
+  cpu:
+    enabled: true
+    averageUtilization: 70
+  # Custom per-pod metrics served by prometheus-adapter (custom.metrics.k8s.io).
+  # Example: [{ name: http_requests_per_second, averageValue: "5" }]
+  podsMetrics: []
+  # External metrics served by prometheus-adapter (external.metrics.k8s.io).
+  # Example: [{ name: rabbitmq_queue_messages_ready, selector: { queue: analytics-service.events }, averageValue: "20" }]
+  externalMetrics: []
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - { type: Pods, value: 2, periodSeconds: 30 }
+    scaleDown:
+      stabilizationWindowSeconds: 120
+      policies:
+        - { type: Pods, value: 1, periodSeconds: 60 }
+
+# PodDisruptionBudget: keeps at least one pod up during node drains / upgrades.
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Optional persistent volume (report-service, file-service write files to disk).
+persistence:
+  enabled: false
+  size: 1Gi
+  storageClass: ""     # empty = cluster default ("standard" on kind)
+  mountPath: /data
+  envName: ""          # env var that tells the app where the volume is mounted
+
+# Prometheus scraping through a ServiceMonitor (Prometheus Operator CRD).
+metrics:
+  enabled: true
+  path: /metrics
+  interval: 15s
+  # Label that kube-prometheus-stack's Prometheus selects ServiceMonitors by.
+  serviceMonitorLabels:
+    release: monitoring
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile: { type: RuntimeDefault }
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: { drop: [ALL] }
+
+# Spread replicas of the same service across the two worker nodes (high availability).
+topologySpread:
+  enabled: true
+  maxSkew: 1
+
+podAnnotations: {}
+
+# Optional node pinning (used by services with a node-local ReadWriteOnce volume).
+nodeSelector: {}

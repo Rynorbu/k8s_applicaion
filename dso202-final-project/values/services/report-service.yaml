@@ -1,0 +1,20 @@
+# report-service - generates PDF/CSV/XLSX reports and stores them on a volume.
+# Runs ONE replica: the files live on a ReadWriteOnce volume, so a second pod on
+# another node could not read them (see instruction.md, capacity plan).
+image:
+  repository: spendwise/report-service
+  tag: dev
+port: 4011
+database: reports
+replicaCount: 1
+persistence:
+  enabled: true
+  size: 2Gi
+  mountPath: /data/reports
+  envName: REPORTS_DIR
+resources:
+  requests: { cpu: 50m, memory: 160Mi }
+  limits: { cpu: "1", memory: 640Mi }
+# Keep the node-local volume on worker 1 together with the database (see platform chart).
+nodeSelector:
+  spendwise/node-index: "1"

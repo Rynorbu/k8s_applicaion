@@ -1,0 +1,6 @@
+# Namespace the SpendWise workloads run in (used by the alert expressions).
+appNamespace: spendwise
+grafanaFolder: SpendWise
+# Label kube-prometheus-stack uses to discover rules.
+ruleLabels:
+  release: monitoring

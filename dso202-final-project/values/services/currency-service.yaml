@@ -1,0 +1,8 @@
+# currency-service - values for the shared chart charts/microservice (one file per service).
+# Argo CD's ApplicationSet creates one Application named "currency-service" from this file.
+image:
+  repository: spendwise/currency-service
+  tag: dev
+port: 4013
+database: "currency"
+replicaCount: 1

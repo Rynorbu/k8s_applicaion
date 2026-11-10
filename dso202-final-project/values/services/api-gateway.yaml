@@ -1,0 +1,26 @@
+# api-gateway - the single entry point for /api/* (behind the NGINX Ingress).
+# CUSTOM-METRIC AUTOSCALING: scales on requests/second per pod (prometheus-adapter)
+# as well as CPU. The HPA uses whichever metric asks for more replicas.
+image:
+  repository: spendwise/api-gateway
+  tag: dev
+port: 8080
+database: ""
+replicaCount: 2
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+  cpu: { enabled: true, averageUtilization: 80 }   # safety net
+  podsMetrics:
+    - name: http_requests_per_second
+      averageValue: "10"      # main signal: one pod per 10 req/s
+resources:
+  requests: { cpu: 100m, memory: 96Mi }
+  limits: { cpu: "1", memory: 320Mi }
+env:
+  # Raised for the load-test demo: the defaults (600 req/min per client IP, 300 per user)
+  # would throttle the in-cluster k6 job before the HPA had anything to react to.
+  RATE_LIMIT_PER_MINUTE: "60000"
+  USER_RATE_LIMIT_PER_MINUTE: "60000"
+waitFor: [redis:6379]     # stateless proxy: needs only Redis (rate limits, revocation)

@@ -1,0 +1,19 @@
+# file-service - receives CSV/Excel uploads and imports transactions.
+# One replica: uploads are kept on a ReadWriteOnce volume.
+image:
+  repository: spendwise/file-service
+  tag: dev
+port: 4016
+database: files
+replicaCount: 1
+persistence:
+  enabled: true
+  size: 2Gi
+  mountPath: /data/files
+  envName: FILES_DIR
+resources:
+  requests: { cpu: 25m, memory: 128Mi }
+  limits: { cpu: 500m, memory: 512Mi }
+# Keep the node-local volume on worker 1 together with the database (see platform chart).
+nodeSelector:
+  spendwise/node-index: "1"

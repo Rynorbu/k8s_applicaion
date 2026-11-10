@@ -1,0 +1,8 @@
+# income-service - values for the shared chart charts/microservice (one file per service).
+# Argo CD's ApplicationSet creates one Application named "income-service" from this file.
+image:
+  repository: spendwise/income-service
+  tag: dev
+port: 4004
+database: "incomes"
+replicaCount: 1

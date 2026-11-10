@@ -1,0 +1,9 @@
+# metrics-server (chart 3.14.0): CPU/memory resource metrics for HPA and `kubectl top`.
+# kind kubelets use self-signed serving certificates, so TLS verification is relaxed
+# (acceptable for a local lab cluster only).
+args:
+  - --kubelet-insecure-tls
+  - --kubelet-preferred-address-types=InternalIP
+resources:
+  requests: { cpu: 20m, memory: 48Mi }
+  limits: { cpu: 200m, memory: 128Mi }

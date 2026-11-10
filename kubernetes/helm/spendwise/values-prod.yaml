@@ -1,0 +1,29 @@
+# Production. Secrets come from an existing Secret managed outside Git
+# (Sealed Secrets / External Secrets Operator), never from values files.
+global:
+  environment: production
+  logLevel: info
+  appUrl: https://spendwise.example.com
+image:
+  registry: ghcr.io/your-org/spendwise
+  tag: latest   # updated by the CI "gitops" job to the released commit SHA
+secrets:
+  create: false
+  existingSecret: spendwise-secrets
+config:
+  corsOrigins: https://spendwise.example.com
+  cookieSecure: "true"
+  enableDocs: "false"
+defaults:
+  hpa: { enabled: true, minReplicas: 2, maxReplicas: 6 }
+ingress:
+  host: spendwise.example.com
+  tls: { enabled: true, secretName: spendwise-tls, clusterIssuer: letsencrypt-prod }
+# Prefer managed PostgreSQL / RabbitMQ / Redis in production:
+infrastructure:
+  postgres: { enabled: true, storage: 50Gi }
+  mailpit: { enabled: false }
+endpoints:
+  smtpHost: smtp.your-provider.com
+  smtpPort: 587
+  smtpUser: apikey

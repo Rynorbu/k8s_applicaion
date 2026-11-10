@@ -1,0 +1,11 @@
+# ai-service - values for the shared chart charts/microservice (one file per service).
+# Argo CD's ApplicationSet creates one Application named "ai-service" from this file.
+image:
+  repository: spendwise/ai-service
+  tag: dev
+port: 4015
+database: "ai"
+replicaCount: 1
+# Optional: Claude-written insight summaries. Missing key = template summary.
+secretEnv:
+  - { name: ANTHROPIC_API_KEY, key: anthropic-api-key, optional: true }

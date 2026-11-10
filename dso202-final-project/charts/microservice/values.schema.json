@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "SpendWise microservice values",
+  "type": "object",
+  "required": ["image", "port", "replicaCount", "autoscaling"],
+  "properties": {
+    "nameOverride": { "type": "string" },
+    "image": {
+      "type": "object",
+      "required": ["repository", "tag"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": { "type": "string", "minLength": 1 },
+        "pullPolicy": { "enum": ["Always", "IfNotPresent", "Never"] }
+      }
+    },
+    "replicaCount": { "type": "integer", "minimum": 1, "maximum": 10 },
+    "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+    "database": { "type": "string", "pattern": "^[a-z_]*$" },
+    "platformEnv": { "type": "boolean" },
+    "env": { "type": "object", "additionalProperties": { "type": ["string", "number", "boolean"] } },
+    "secretEnv": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "key"],
+        "properties": { "name": { "type": "string" }, "key": { "type": "string" }, "optional": { "type": "boolean" } }
+      }
+    },
+    "autoscaling": {
+      "type": "object",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "minReplicas": { "type": "integer", "minimum": 1 },
+        "maxReplicas": { "type": "integer", "minimum": 1, "maximum": 20 },
+        "cpu": {
+          "type": "object",
+          "properties": { "enabled": { "type": "boolean" }, "averageUtilization": { "type": "integer", "minimum": 10, "maximum": 100 } }
+        },
+        "podsMetrics": {
+          "type": "array",
+          "items": { "type": "object", "required": ["name", "averageValue"], "properties": { "name": { "type": "string" }, "averageValue": { "type": "string" } } }
+        },
+        "externalMetrics": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "averageValue"],
+            "properties": { "name": { "type": "string" }, "selector": { "type": "object" }, "averageValue": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "persistence": {
+      "type": "object",
+      "properties": { "enabled": { "type": "boolean" }, "size": { "type": "string" }, "mountPath": { "type": "string" }, "envName": { "type": "string" } }
+    }
+  }
+}

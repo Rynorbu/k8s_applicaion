@@ -1,0 +1,29 @@
+# Shared platform: PostgreSQL + RabbitMQ (StatefulSets), Redis, Mailpit, ConfigMap, Ingress.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: spendwise
+  source:
+    repoURL: https://github.com/YOUR-GITHUB-USERNAME/spendwise.git
+    targetRevision: main
+    path: dso202-final-project/charts/platform
+    helm:
+      releaseName: platform
+      valueFiles: [../../values/platform.yaml]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: spendwise
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true
+      - SkipDryRunOnMissingResource=true   # ServiceMonitor CRD arrives with the monitoring app
+    retry:
+      limit: 10
+      backoff: { duration: 15s, factor: 2, maxDuration: 3m }

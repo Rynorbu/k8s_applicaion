@@ -1,0 +1,99 @@
+# kube-prometheus-stack (chart 92.17.1): Prometheus Operator + Prometheus + Grafana +
+# kube-state-metrics + node-exporter. Tuned for a 3-node kind cluster.
+# Used by argocd/apps/monitoring.yaml (Argo CD) or directly:
+#   helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
+#     --version 92.17.1 -n monitoring --create-namespace -f monitoring/kube-prometheus-stack.values.yaml
+
+fullnameOverride: monitoring
+
+# kind runs etcd / scheduler / controller-manager / kube-proxy bound to 127.0.0.1,
+# so Prometheus cannot scrape them - disable to avoid permanently "down" targets.
+kubeEtcd: { enabled: false }
+kubeScheduler: { enabled: false }
+kubeControllerManager: { enabled: false }
+kubeProxy: { enabled: false }
+
+# Prometheus alerts are evaluated and visible in the Prometheus UI (Alerts tab);
+# Alertmanager (notification routing) is not needed for this project.
+alertmanager:
+  enabled: false
+
+prometheus:
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hosts: [prometheus.localtest.me]
+    paths: [/]
+  prometheusSpec:
+    # Select EVERY ServiceMonitor / PodMonitor / PrometheusRule in the cluster,
+    # not only those created by this Helm release.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+    scrapeInterval: 15s
+    evaluationInterval: 15s
+    retention: 3d
+    retentionSize: 4GB
+    resources:
+      requests: { cpu: 100m, memory: 400Mi }
+      limits: { cpu: "1", memory: 1500Mi }
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: [ReadWriteOnce]
+          resources: { requests: { storage: 5Gi } }
+
+grafana:
+  # Admin login comes from a Secret created by scripts/create-secrets.sh (not from Git).
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hosts: [grafana.localtest.me]
+    path: /
+  # Public URL behind the Ingress (host port 8000) so login redirects stay on that URL.
+  grafana.ini:
+    server:
+      root_url: http://grafana.localtest.me:8000
+  persistence:
+    enabled: true
+    size: 1Gi
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 384Mi }
+  defaultDashboardsTimezone: browser
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard     # ConfigMaps with this label are loaded as dashboards
+      labelValue: "1"
+      searchNamespace: ALL
+      folderAnnotation: grafana_folder
+      provider:
+        foldersFromFilesStructure: true
+    datasources:
+      enabled: true
+      defaultDatasourceEnabled: true
+
+# Docker Desktop / WSL do not support the root-filesystem mount propagation that
+# node-exporter asks for; without this the node-exporter pods fail to start on kind.
+prometheus-node-exporter:
+  hostRootFsMount:
+    enabled: false
+  resources:
+    requests: { cpu: 10m, memory: 24Mi }
+    limits: { cpu: 200m, memory: 64Mi }
+
+kube-state-metrics:
+  resources:
+    requests: { cpu: 10m, memory: 48Mi }
+    limits: { cpu: 200m, memory: 160Mi }
+
+prometheusOperator:
+  resources:
+    requests: { cpu: 20m, memory: 64Mi }
+    limits: { cpu: 300m, memory: 256Mi }

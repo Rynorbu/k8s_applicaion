@@ -1,0 +1,18 @@
+{
+  "name": "@spendwise/report-service",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Asynchronous PDF / CSV / Excel financial report generation",
+  "scripts": {
+    "start": "node --import @spendwise/common/tracing src/index.js",
+    "dev": "node --watch --import @spendwise/common/tracing src/index.js",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration --passWithNoTests"
+  },
+  "dependencies": {
+    "@spendwise/common": "1.0.0",
+    "exceljs": "^4.4.0",
+    "pdfkit": "^0.15.2"
+  }
+}

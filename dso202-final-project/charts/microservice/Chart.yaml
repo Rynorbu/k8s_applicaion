@@ -1,0 +1,13 @@
+apiVersion: v2
+name: microservice
+description: >-
+  One reusable chart for every SpendWise microservice. Each service is a separate
+  Helm release (and a separate Argo CD Application) rendered from its own values
+  file in ../../values/services/.
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+kubeVersion: ">=1.29.0-0"
+keywords: [spendwise, microservice, dso202]
+maintainers:
+  - name: DSO202 Group (Ranjung Yeshi Norbu, Namgay Wangchuk, Khem Raj Ghalley, Yonten Kinley Tenzin)

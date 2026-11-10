@@ -1,0 +1,19 @@
+{
+  "name": "@spendwise/auth-service",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Authentication: registration, login, JWT access tokens, rotating refresh tokens, password reset, sessions, JWKS",
+  "scripts": {
+    "start": "node --import @spendwise/common/tracing src/index.js",
+    "dev": "node --watch --import @spendwise/common/tracing src/index.js",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration --passWithNoTests"
+  },
+  "dependencies": {
+    "@spendwise/common": "1.0.0",
+    "argon2": "^0.41.1",
+    "cookie-parser": "^1.4.7",
+    "jose": "^5.9.6"
+  }
+}

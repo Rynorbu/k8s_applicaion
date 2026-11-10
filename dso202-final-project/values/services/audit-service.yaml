@@ -1,0 +1,8 @@
+# audit-service - values for the shared chart charts/microservice (one file per service).
+# Argo CD's ApplicationSet creates one Application named "audit-service" from this file.
+image:
+  repository: spendwise/audit-service
+  tag: dev
+port: 4014
+database: "audit"
+replicaCount: 1

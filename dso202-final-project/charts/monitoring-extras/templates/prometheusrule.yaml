@@ -1,0 +1,79 @@
+{{- $ns := .Values.appNamespace -}}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: spendwise-alerts
+  labels:
+    app.kubernetes.io/part-of: spendwise
+    {{- toYaml .Values.ruleLabels | nindent 4 }}
+spec:
+  groups:
+    - name: spendwise.availability
+      rules:
+        - alert: SpendWiseServiceDown
+          expr: up{namespace="{{ $ns }}", job=~".*-service|api-gateway"} == 0
+          for: 2m
+          labels: { severity: critical }
+          annotations:
+            summary: "{{`{{ $labels.job }}`}} is down"
+            description: "Prometheus has not been able to scrape {{`{{ $labels.pod }}`}} for 2 minutes."
+        # Fires even when a Deployment has NO pods (then there is no target for up == 0).
+        - alert: SpendWiseDeploymentUnavailable
+          expr: kube_deployment_status_replicas_available{namespace="{{ $ns }}"} == 0
+          for: 2m
+          labels: { severity: critical }
+          annotations:
+            summary: "Deployment {{`{{ $labels.deployment }}`}} has no available pods"
+        - alert: SpendWisePodCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace="{{ $ns }}"}[15m]) > 3
+          labels: { severity: warning }
+          annotations:
+            summary: "{{`{{ $labels.pod }}`}} restarted more than 3 times in 15 minutes"
+    - name: spendwise.slo
+      rules:
+        - alert: SpendWiseHighErrorRate
+          expr: |
+            sum by (service) (rate(http_request_duration_seconds_count{namespace="{{ $ns }}", status_code=~"5.."}[5m]))
+              / clamp_min(sum by (service) (rate(http_request_duration_seconds_count{namespace="{{ $ns }}"}[5m])), 1e-9) > 0.05
+          for: 5m
+          labels: { severity: critical }
+          annotations:
+            summary: "{{`{{ $labels.service }}`}} 5xx ratio above 5%"
+        - alert: SpendWiseHighLatency
+          expr: |
+            histogram_quantile(0.95, sum by (service, le) (rate(http_request_duration_seconds_bucket{namespace="{{ $ns }}"}[5m]))) > 1
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: "{{`{{ $labels.service }}`}} p95 latency above 1s"
+    - name: spendwise.messaging
+      rules:
+        - alert: SpendWiseDeadLetteredEvents
+          expr: sum by (queue) (rabbitmq_detailed_queue_messages_ready{namespace="{{ $ns }}", queue=~".*\\.dlq"}) > 0
+          for: 1m
+          labels: { severity: warning }
+          annotations:
+            summary: "Messages waiting in dead-letter queue {{`{{ $labels.queue }}`}}"
+            description: "Inspect and replay with scripts/replay-dlq.mjs once the cause is fixed."
+        - alert: SpendWiseOutboxBacklog
+          expr: sum by (service) (outbox_pending_events{namespace="{{ $ns }}"}) > 100
+          for: 5m
+          labels: { severity: warning }
+          annotations:
+            summary: "{{`{{ $labels.service }}`}} cannot publish events (outbox backlog > 100)"
+    - name: spendwise.capacity
+      rules:
+        - alert: SpendWiseHPAAtMaxReplicas
+          expr: |
+            kube_horizontalpodautoscaler_status_current_replicas{namespace="{{ $ns }}"}
+              >= kube_horizontalpodautoscaler_spec_max_replicas{namespace="{{ $ns }}"}
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: "HPA {{`{{ $labels.horizontalpodautoscaler }}`}} has been at max replicas for 10 minutes - raise maxReplicas or add nodes"
+        - alert: SpendWisePVCAlmostFull
+          expr: kubelet_volume_stats_used_bytes{namespace="{{ $ns }}"} / kubelet_volume_stats_capacity_bytes{namespace="{{ $ns }}"} > 0.85
+          for: 5m
+          labels: { severity: warning }
+          annotations:
+            summary: "PVC {{`{{ $labels.persistentvolumeclaim }}`}} is more than 85% full"

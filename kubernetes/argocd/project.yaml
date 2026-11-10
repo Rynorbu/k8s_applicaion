@@ -1,0 +1,16 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: spendwise
+  namespace: argocd
+spec:
+  description: SpendWise personal finance platform
+  sourceRepos:
+    - https://github.com/your-org/spendwise.git
+  destinations:
+    - { server: https://kubernetes.default.svc, namespace: spendwise-dev }
+    - { server: https://kubernetes.default.svc, namespace: spendwise }
+  clusterResourceWhitelist:
+    - { group: '', kind: Namespace }
+  namespaceResourceWhitelist:
+    - { group: '*', kind: '*' }

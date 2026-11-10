@@ -1,0 +1,312 @@
+# SpendWise - local development stack (17 microservices + infrastructure + observability).
+#
+#   docker compose up -d --build          # everything
+#   npm run infra:up                       # infrastructure only (run services with npm run dev)
+#
+# UIs:  app http://localhost:3000 · API docs http://localhost:8080/docs · RabbitMQ http://localhost:15672
+#       Mailpit http://localhost:8025 · Jaeger http://localhost:16686 · Grafana http://localhost:3001
+#       Prometheus http://localhost:9090
+#
+# Secrets default to development-only values. Run `npm run secrets:generate` to create a .env
+# with strong random secrets and an RSA signing key.
+
+name: spendwise
+
+x-service-env: &service-env
+  NODE_ENV: ${NODE_ENV:-development}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-dev-only-internal-token-change-me-0123456789}
+  RABBITMQ_URL: amqp://${RABBITMQ_USER:-spendwise}:${RABBITMQ_PASSWORD:-spendwise-dev}@rabbitmq:5672
+  REDIS_URL: redis://:${REDIS_PASSWORD:-spendwise-dev}@redis:6379
+  AUTH_JWKS_URL: http://auth-service:4001/.well-known/jwks.json
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+  CATEGORY_SERVICE_URL: http://category-service:4005
+  CURRENCY_SERVICE_URL: http://currency-service:4013
+  FILE_SERVICE_URL: http://file-service:4016
+  EXPENSE_SERVICE_URL: http://expense-service:4003
+  INCOME_SERVICE_URL: http://income-service:4004
+  ANALYTICS_SERVICE_URL: http://analytics-service:4009
+
+x-service: &service
+  restart: unless-stopped
+  depends_on:
+    postgres: { condition: service_healthy }
+    rabbitmq: { condition: service_healthy }
+    redis: { condition: service_healthy }
+  deploy:
+    resources:
+      limits: { memory: 256m }
+  logging:
+    driver: json-file
+    options: { max-size: 10m, max-file: '3' }
+
+
+services:
+  # ---------------------------------------------------------------- infrastructure
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres-dev}
+      SERVICE_DB_PASSWORD: ${SERVICE_DB_PASSWORD:-spendwise-dev-db}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/01-create-databases.sh:/docker-entrypoint-initdb.d/01-create-databases.sh:ro
+    ports: ['${POSTGRES_HOST_PORT:-5432}:5432']
+    command: ['postgres', '-c', 'max_connections=400', '-c', 'shared_buffers=256MB']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d files']
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-spendwise}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-spendwise-dev}
+    volumes: [rabbitmq-data:/var/lib/rabbitmq]
+    ports: ['${RABBITMQ_HOST_PORT:-5672}:5672', '15672:15672']
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'ping']
+      interval: 10s
+      timeout: 10s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--requirepass', '${REDIS_PASSWORD:-spendwise-dev}', '--maxmemory', '256mb', '--maxmemory-policy', 'allkeys-lru']
+    ports: ['${REDIS_HOST_PORT:-6379}:6379']
+    healthcheck:
+      test: ['CMD-SHELL', 'redis-cli -a "$${REDIS_PASSWORD:-spendwise-dev}" --no-auth-warning ping | grep PONG']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-spendwise-dev}
+
+  mailpit:
+    image: axllent/mailpit:v1.21
+    restart: unless-stopped
+    ports: ['8025:8025', '1025:1025']
+
+  # ---------------------------------------------------------------- observability
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.116.1
+    restart: unless-stopped
+    command: ['--config=/etc/otelcol/config.yaml']
+    volumes: ['./monitoring/otel-collector/config.yaml:/etc/otelcol/config.yaml:ro']
+    ports: ['4318:4318']
+    depends_on: [jaeger]
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.64.0
+    restart: unless-stopped
+    environment: { COLLECTOR_OTLP_ENABLED: 'true' }
+    ports: ['16686:16686']
+
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    restart: unless-stopped
+    command: ['--config.file=/etc/prometheus/prometheus.yml', '--storage.tsdb.retention.time=7d']
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports: ['9090:9090']
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin-dev}
+      GF_AUTH_ANONYMOUS_ENABLED: 'false'
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ['3001:3000']
+    depends_on: [prometheus, jaeger]
+
+  # ---------------------------------------------------------------- microservices
+  api-gateway:
+    build: { context: ., dockerfile: services/api-gateway/Dockerfile }
+    image: spendwise/api-gateway:dev
+    restart: unless-stopped
+    environment:
+      <<: *service-env
+      CORS_ORIGINS: http://localhost:3000,http://localhost:5173
+      AUTH_SERVICE_URL: http://auth-service:4001
+      USER_SERVICE_URL: http://user-service:4002
+      BUDGET_SERVICE_URL: http://budget-service:4006
+      RECURRING_SERVICE_URL: http://recurring-service:4007
+      GOAL_SERVICE_URL: http://goal-service:4008
+      NOTIFICATION_SERVICE_URL: http://notification-service:4010
+      REPORT_SERVICE_URL: http://report-service:4011
+      SEARCH_SERVICE_URL: http://search-service:4012
+      AUDIT_SERVICE_URL: http://audit-service:4014
+      AI_SERVICE_URL: http://ai-service:4015
+    ports: ['8080:8080']
+    depends_on:
+      redis: { condition: service_healthy }
+      auth-service: { condition: service_started }
+
+  auth-service:
+    <<: *service
+    build: { context: ., dockerfile: services/auth-service/Dockerfile }
+    image: spendwise/auth-service:dev
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://auth_svc:${SERVICE_DB_PASSWORD:-spendwise-dev-db}@postgres:5432/auth
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:-}
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-admin@spendwise.local}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+
+  user-service:
+    <<: *service
+    build: { context: ., dockerfile: services/user-service/Dockerfile }
+    image: spendwise/user-service:dev
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://users_svc:${SERVICE_DB_PASSWORD:-spendwise-dev-db}@postgres:5432/users
+
+  expense-service:
+    <<: *service
+    build: { context: ., dockerfile: services/expense-service/Dockerfile }
+    image: spendwise/expense-service:dev
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://expenses_svc:${SERVICE_DB_PASSWORD:-spendwise-dev-db}@postgres:5432/expenses
+
+  income-service:
+    <<: *service
+    build: { context: ., dockerfile: services/income-service/Dockerfile }
+    image: spendwise/income-service:dev
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://incomes_svc:${SERVICE_DB_PASSWORD:-spendwise-dev-db}@postgres:5432/incomes
+
+  category-service:
+    <<: *service
+    build: { context: ., dockerfile: services/category-service/Dockerfile }
+    image: spendwise/category-service:dev
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://categories_svc:${SERVICE_DB_PASSWORD:-spendwise-dev-db}@postgres:5432/categories
+
+  budget-service:
+    <<: *service
+    build: { context: ., dockerfile: services/budget-service/Dockerfile }
+    image: spendwise/budget-service:dev
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://budgets_svc:${SERVICE_DB_PASSWORD:-spendwise-dev-db}@postgres:5432/budgets
+
+  recurring-service:
+    <<: *service
+    build: { context: ., dockerfile: services/recurring-service/Dockerfile }
+    image: spendwise/recurring-service:dev
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://recurring_svc:${SERVICE_DB_PASSWORD:-spendwise-dev-db}@postgres:5432/recurring
+      SCHEDULER_INTERVAL_SECONDS: 15
+
+  goal-service:
+    <<: *service
+    build: { context: ., dockerfile: services/goal-service/Dockerfile }
+    image: spendwise/goal-service:dev
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://goals_svc:${SERVICE_DB_PASSWORD:-spendwise-dev-db}@postgres:5432/goals
+
+  analytics-service:
+    <<: *service
+    build: { context: ., dockerfile: services/analytics-service/Dockerfile }
+    image: spendwise/analytics-service:dev
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://analytics_svc:${SERVICE_DB_PASSWORD:-spendwise-dev-db}@postgres:5432/analytics
+
+  notification-service:
+    <<: *service
+    build: { context: ., dockerfile: services/notification-service/Dockerfile }
+    image: spendwise/notification-service:dev
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://notifications_svc:${SERVICE_DB_PASSWORD:-spendwise-dev-db}@postgres:5432/notifications
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      APP_URL: ${APP_URL:-http://localhost:3000}
+
+  report-service:
+    <<: *service
+    build: { context: ., dockerfile: services/report-service/Dockerfile }
+    image: spendwise/report-service:dev
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://reports_svc:${SERVICE_DB_PASSWORD:-spendwise-dev-db}@postgres:5432/reports
+      REPORTS_DIR: /data/reports
+    volumes: [report-data:/data/reports]
+
+  search-service:
+    <<: *service
+    build: { context: ., dockerfile: services/search-service/Dockerfile }
+    image: spendwise/search-service:dev
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://search_svc:${SERVICE_DB_PASSWORD:-spendwise-dev-db}@postgres:5432/search
+
+  currency-service:
+    <<: *service
+    build: { context: ., dockerfile: services/currency-service/Dockerfile }
+    image: spendwise/currency-service:dev
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://currency_svc:${SERVICE_DB_PASSWORD:-spendwise-dev-db}@postgres:5432/currency
+      RATES_REFRESH_ENABLED: ${RATES_REFRESH_ENABLED:-true}
+
+  audit-service:
+    <<: *service
+    build: { context: ., dockerfile: services/audit-service/Dockerfile }
+    image: spendwise/audit-service:dev
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://audit_svc:${SERVICE_DB_PASSWORD:-spendwise-dev-db}@postgres:5432/audit
+
+  ai-service:
+    <<: *service
+    build: { context: ., dockerfile: services/ai-service/Dockerfile }
+    image: spendwise/ai-service:dev
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://ai_svc:${SERVICE_DB_PASSWORD:-spendwise-dev-db}@postgres:5432/ai
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+
+  file-service:
+    <<: *service
+    build: { context: ., dockerfile: services/file-service/Dockerfile }
+    image: spendwise/file-service:dev
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://files_svc:${SERVICE_DB_PASSWORD:-spendwise-dev-db}@postgres:5432/files
+      FILES_DIR: /data/files
+    volumes: [file-data:/data/files]
+
+  # ---------------------------------------------------------------- frontend
+  frontend:
+    build: { context: ., dockerfile: frontend/Dockerfile }
+    image: spendwise/frontend:dev
+    restart: unless-stopped
+    environment:
+      GATEWAY_UPSTREAM: api-gateway:8080
+    ports: ['3000:8080']
+    depends_on: [api-gateway]
+
+volumes:
+  postgres-data:
+  rabbitmq-data:
+  report-data:
+  file-data:

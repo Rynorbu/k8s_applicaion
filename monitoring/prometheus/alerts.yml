@@ -1,0 +1,34 @@
+groups:
+  - name: spendwise-slo
+    rules:
+      - alert: ServiceDown
+        expr: up{job="spendwise"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: '{{ $labels.instance }} is down'
+      - alert: HighErrorRate
+        expr: |
+          sum by (service) (rate(http_request_duration_seconds_count{status_code=~"5.."}[5m]))
+            / sum by (service) (rate(http_request_duration_seconds_count[5m])) > 0.05
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: '{{ $labels.service }} 5xx rate above 5%'
+      - alert: HighLatencyP95
+        expr: histogram_quantile(0.95, sum by (service, le) (rate(http_request_duration_seconds_bucket[5m]))) > 1
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: '{{ $labels.service }} p95 latency above 1s'
+      - alert: OutboxBacklog
+        expr: outbox_pending_events > 500
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: '{{ $labels.service }} has {{ $value }} unpublished outbox events (broker issue?)'
+      - alert: EventsDeadLettered
+        expr: increase(events_consumed_total{outcome="dead_letter"}[15m]) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: '{{ $labels.service }} dead-lettered {{ $labels.type }} events'

@@ -1,0 +1,8 @@
+# user-service - values for the shared chart charts/microservice (one file per service).
+# Argo CD's ApplicationSet creates one Application named "user-service" from this file.
+image:
+  repository: spendwise/user-service
+  tag: dev
+port: 4002
+database: "users"
+replicaCount: 1

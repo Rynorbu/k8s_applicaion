@@ -1,0 +1,32 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files: [/etc/prometheus/alerts.yml]
+
+scrape_configs:
+  - job_name: spendwise
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - api-gateway:8080
+          - auth-service:4001
+          - user-service:4002
+          - expense-service:4003
+          - income-service:4004
+          - category-service:4005
+          - budget-service:4006
+          - recurring-service:4007
+          - goal-service:4008
+          - analytics-service:4009
+          - notification-service:4010
+          - report-service:4011
+          - search-service:4012
+          - currency-service:4013
+          - audit-service:4014
+          - ai-service:4015
+          - file-service:4016
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: '([^:]+):.*'
+        target_label: instance

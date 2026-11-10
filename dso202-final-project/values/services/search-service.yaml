@@ -1,0 +1,8 @@
+# search-service - values for the shared chart charts/microservice (one file per service).
+# Argo CD's ApplicationSet creates one Application named "search-service" from this file.
+image:
+  repository: spendwise/search-service
+  tag: dev
+port: 4012
+database: "search"
+replicaCount: 1

@@ -1,0 +1,38 @@
+{
+  "name": "spendwise",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SpendWise - distributed expense tracker & personal finance platform (17 microservices)",
+  "type": "module",
+  "workspaces": [
+    "shared/*",
+    "services/*",
+    "frontend"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "format": "prettier --write \"**/*.{js,jsx,mjs,json,md,yml,yaml}\"",
+    "test": "npm run test:unit",
+    "test:unit": "npm run test:unit --workspaces --if-present",
+    "test:integration": "npm run test:integration --workspaces --if-present",
+    "test:e2e": "node --test \"tests/e2e/*.test.mjs\"",
+    "secrets:generate": "node scripts/generate-secrets.mjs",
+    "infra:up": "docker compose up -d postgres rabbitmq redis mailpit otel-collector jaeger prometheus grafana",
+    "stack:up": "docker compose up -d --build",
+    "stack:down": "docker compose down"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "eslint": "^9.17.0",
+    "eslint-plugin-react": "^7.37.2",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "eslint-plugin-security": "^3.0.1",
+    "globals": "^15.14.0",
+    "prettier": "^3.4.2",
+    "supertest": "^7.0.0",
+    "vitest": "^2.1.8"
+  }
+}

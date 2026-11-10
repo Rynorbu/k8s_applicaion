@@ -1,0 +1,27 @@
+# Serves Prometheus queries as Kubernetes custom/external metrics for the HPAs.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prometheus-adapter
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: spendwise
+  sources:
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      chart: prometheus-adapter
+      targetRevision: 5.4.0
+      helm:
+        releaseName: prometheus-adapter
+        valueFiles: [$values/dso202-final-project/monitoring/prometheus-adapter.values.yaml]
+    - repoURL: https://github.com/YOUR-GITHUB-USERNAME/spendwise.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]

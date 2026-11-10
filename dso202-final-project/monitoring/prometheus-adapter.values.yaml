@@ -1,0 +1,50 @@
+# prometheus-adapter (chart 5.4.0): turns Prometheus queries into Kubernetes metrics APIs
+#   custom.metrics.k8s.io   -> per-pod metrics  (HPA type: Pods)
+#   external.metrics.k8s.io -> other metrics    (HPA type: External)
+# It does NOT replace metrics-server (resource metrics: CPU/memory for `kubectl top`).
+
+prometheus:
+  url: http://monitoring-prometheus.monitoring.svc
+  port: 9090
+
+metricsRelistInterval: 30s
+logLevel: 2
+
+resources:
+  requests: { cpu: 20m, memory: 64Mi }
+  limits: { cpu: 300m, memory: 256Mi }
+
+rules:
+  default: false          # only expose the metrics we actually autoscale on
+  custom:
+    # http_requests_per_second{pod} = request rate per pod, from the histogram that
+    # every SpendWise service exports (/health and /metrics are already excluded).
+    - seriesQuery: 'http_request_duration_seconds_count{namespace!="",pod!=""}'
+      resources:
+        overrides:
+          namespace: { resource: namespace }
+          pod: { resource: pod }
+      name:
+        matches: "^http_request_duration_seconds_count$"
+        as: "http_requests_per_second"
+      metricsQuery: 'sum(rate(<<.Series>>{<<.LabelMatchers>>}[1m])) by (<<.GroupBy>>)'
+    # events_processed_per_second{pod} = domain events a consumer handles per second.
+    - seriesQuery: 'events_consumed_total{namespace!="",pod!=""}'
+      resources:
+        overrides:
+          namespace: { resource: namespace }
+          pod: { resource: pod }
+      name:
+        matches: "^events_consumed_total$"
+        as: "events_processed_per_second"
+      metricsQuery: 'sum(rate(<<.Series>>{<<.LabelMatchers>>}[1m])) by (<<.GroupBy>>)'
+  external:
+    # rabbitmq_queue_messages_ready{queue} = messages waiting in a RabbitMQ queue.
+    - seriesQuery: 'rabbitmq_detailed_queue_messages_ready{namespace!="",queue!=""}'
+      resources:
+        overrides:
+          namespace: { resource: namespace }
+      name:
+        matches: "^rabbitmq_detailed_queue_messages_ready$"
+        as: "rabbitmq_queue_messages_ready"
+      metricsQuery: 'sum(<<.Series>>{<<.LabelMatchers>>}) by (<<.GroupBy>>)'

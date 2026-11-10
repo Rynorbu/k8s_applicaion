@@ -1,0 +1,19 @@
+# expense-service - the busiest write path (ExpenseCreated -> 5 consumers).
+# CUSTOM-METRIC AUTOSCALING on requests/second per pod + CPU.
+image:
+  repository: spendwise/expense-service
+  tag: dev
+port: 4003
+database: expenses
+replicaCount: 2
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 8
+  cpu: { enabled: true, averageUtilization: 80 }   # safety net
+  podsMetrics:
+    - name: http_requests_per_second
+      averageValue: "5"       # main signal: one pod per 5 req/s
+resources:
+  requests: { cpu: 100m, memory: 96Mi }
+  limits: { cpu: "1", memory: 320Mi }

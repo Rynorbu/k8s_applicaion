@@ -1,0 +1,10 @@
+apiVersion: v2
+name: platform
+description: >-
+  Shared platform for SpendWise: PostgreSQL (StatefulSet + PVC), RabbitMQ (StatefulSet + PVC),
+  Redis, Mailpit, the shared ConfigMap, the NGINX Ingress and the exporters/ServiceMonitors
+  that feed Prometheus.
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+kubeVersion: ">=1.29.0-0"

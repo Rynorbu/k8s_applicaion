@@ -1,0 +1,10 @@
+{{ include "microservice.name" . }} {{ .Values.image.tag }} deployed to namespace {{ .Release.Namespace }}.
+
+  kubectl -n {{ .Release.Namespace }} get deploy,pods,svc -l app.kubernetes.io/name={{ include "microservice.name" . }}
+{{- if .Values.autoscaling.enabled }}
+  kubectl -n {{ .Release.Namespace }} get hpa {{ include "microservice.name" . }} --watch
+{{- end }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "microservice.name" . }} {{ .Values.port }}:{{ .Values.port }}
+  curl http://127.0.0.1:{{ .Values.port }}{{ .Values.health.readiness }}
+
+Run the chart test:  helm test {{ .Release.Name }} -n {{ .Release.Namespace }}

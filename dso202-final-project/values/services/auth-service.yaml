@@ -1,0 +1,14 @@
+# auth-service - values for the shared chart charts/microservice (one file per service).
+# Argo CD's ApplicationSet creates one Application named "auth-service" from this file.
+image:
+  repository: spendwise/auth-service
+  tag: dev
+port: 4001
+database: "auth"
+replicaCount: 2
+# RS256 signing key shared by all auth replicas (from the platform secret).
+secretEnv:
+  - { name: JWT_PRIVATE_KEY, key: jwt-private-key }
+resources:
+  requests: { cpu: 50m, memory: 128Mi }   # argon2id password hashing is CPU/memory heavy
+  limits: { cpu: "1", memory: 384Mi }

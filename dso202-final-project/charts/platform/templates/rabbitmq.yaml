@@ -1,0 +1,106 @@
+{{- $mq := .Values.rabbitmq -}}
+# RabbitMQ message broker (StatefulSet + PVC). Its built-in Prometheus plugin (:15692)
+# exposes per-queue depth, which drives the queue-based autoscaling of consumers.
+# The StatefulSet gives the pod a stable hostname (rabbitmq-0), so the broker keeps the
+# same node name - and therefore the same data directory on its PVC - across restarts.
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq-headless
+  labels: {{- include "platform.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector: { app.kubernetes.io/name: rabbitmq }
+  ports: [{ name: amqp, port: 5672, targetPort: amqp }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/name: rabbitmq
+spec:
+  selector: { app.kubernetes.io/name: rabbitmq }
+  ports:
+    - { name: amqp, port: 5672, targetPort: amqp }
+    - { name: management, port: 15672, targetPort: management }
+    - { name: metrics, port: 15692, targetPort: metrics }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: rabbitmq
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/name: rabbitmq
+spec:
+  serviceName: rabbitmq-headless
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: rabbitmq }
+  template:
+    metadata:
+      labels:
+        {{- include "platform.labels" . | nindent 8 }}
+        app.kubernetes.io/name: rabbitmq
+    spec:
+      automountServiceAccountToken: false
+      {{- with .Values.statefulNodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext: { fsGroup: 999, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: rabbitmq
+          image: {{ $mq.image }}
+          ports:
+            - { name: amqp, containerPort: 5672 }
+            - { name: management, containerPort: 15672 }
+            - { name: metrics, containerPort: 15692 }
+          env:
+            {{- include "platform.secretEnv" (list "RABBITMQ_DEFAULT_USER" .Values.secretName "rabbitmq-user") | nindent 12 }}
+            {{- include "platform.secretEnv" (list "RABBITMQ_DEFAULT_PASS" .Values.secretName "rabbitmq-password") | nindent 12 }}
+          startupProbe:
+            exec: { command: [rabbitmq-diagnostics, -q, ping] }
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 30
+          readinessProbe:
+            exec: { command: [rabbitmq-diagnostics, -q, check_port_connectivity] }
+            periodSeconds: 15
+            timeoutSeconds: 10
+          livenessProbe:
+            exec: { command: [rabbitmq-diagnostics, -q, ping] }
+            periodSeconds: 30
+            timeoutSeconds: 10
+          resources: {{- toYaml $mq.resources | nindent 12 }}
+          securityContext: { allowPrivilegeEscalation: false }
+          volumeMounts: [{ name: data, mountPath: /var/lib/rabbitmq }]
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with .Values.storageClass }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources: { requests: { storage: {{ $mq.storage }} } }
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: rabbitmq
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    {{- toYaml .Values.metrics.serviceMonitorLabels | nindent 4 }}
+spec:
+  selector:
+    matchLabels: { app.kubernetes.io/name: rabbitmq }
+  endpoints:
+    # Aggregated broker metrics (connections, message rates, memory).
+    - { port: metrics, path: /metrics, interval: 15s }
+    # Per-queue depth: rabbitmq_detailed_queue_messages_ready{queue="..."}
+    - port: metrics
+      path: /metrics/detailed
+      interval: 15s
+      params:
+        family: [queue_coarse_metrics, queue_consumer_count]

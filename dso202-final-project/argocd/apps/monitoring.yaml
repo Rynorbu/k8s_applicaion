@@ -1,0 +1,34 @@
+# Prometheus Operator + Prometheus + Grafana + kube-state-metrics + node-exporter.
+# Multi-source Application: the chart comes from the Helm repository, the values
+# file comes from our Git repository ($values).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: spendwise
+  sources:
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      chart: kube-prometheus-stack
+      targetRevision: 92.17.1
+      helm:
+        releaseName: monitoring
+        valueFiles: [$values/dso202-final-project/monitoring/kube-prometheus-stack.values.yaml]
+    - repoURL: https://github.com/YOUR-GITHUB-USERNAME/spendwise.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true   # the Prometheus Operator CRDs are too large for client-side apply
+    retry:
+      limit: 5
+      backoff: { duration: 20s, factor: 2, maxDuration: 5m }

@@ -1,0 +1,8 @@
+# recurring-service - values for the shared chart charts/microservice (one file per service).
+# Argo CD's ApplicationSet creates one Application named "recurring-service" from this file.
+image:
+  repository: spendwise/recurring-service
+  tag: dev
+port: 4007
+database: "recurring"
+replicaCount: 1

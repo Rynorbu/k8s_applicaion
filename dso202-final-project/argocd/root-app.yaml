@@ -1,0 +1,21 @@
+# App of Apps: the ONLY object applied by hand (kubectl apply -f argocd/root-app.yaml).
+# It points Argo CD at argocd/apps/, and everything else is created from Git:
+#   metrics-server -> monitoring (kube-prometheus-stack) -> prometheus-adapter
+#   -> monitoring-extras (dashboards + alerts) -> platform -> 18 service Applications (ApplicationSet)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: spendwise-root
+  namespace: argocd
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: spendwise
+  source:
+    repoURL: https://github.com/YOUR-GITHUB-USERNAME/spendwise.git
+    targetRevision: main
+    path: dso202-final-project/argocd/apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }

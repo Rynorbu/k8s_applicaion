@@ -1,0 +1,217 @@
+{{- $secret := include "spendwise.secretName" . -}}
+{{- with .Values.infrastructure.postgres }}{{- if .enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spendwise-postgres-init
+  labels: {{- include "spendwise.labels" $ | nindent 4 }}
+data:
+  01-create-databases.sh: |-
+{{ $.Files.Get "files/01-create-databases.sh" | indent 4 }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: spendwise-postgres
+  labels:
+    {{- include "spendwise.labels" $ | nindent 4 }}
+    app.kubernetes.io/name: postgres
+spec:
+  serviceName: spendwise-postgres
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: postgres }
+  template:
+    metadata:
+      labels:
+        {{- include "spendwise.labels" $ | nindent 8 }}
+        app.kubernetes.io/name: postgres
+    spec:
+      automountServiceAccountToken: false
+      securityContext: { fsGroup: 70, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: postgres
+          image: {{ .image }}
+          args: ["-c", "max_connections=400"]
+          ports: [{ name: postgres, containerPort: 5432 }]
+          env:
+            - { name: POSTGRES_USER, value: postgres }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+            {{- include "spendwise.secretEnv" (list "POSTGRES_PASSWORD" $secret "postgres-password") | nindent 12 }}
+            {{- include "spendwise.secretEnv" (list "SERVICE_DB_PASSWORD" $secret "service-db-password") | nindent 12 }}
+          readinessProbe:
+            exec: { command: [sh, -c, "pg_isready -U postgres -d files"] }
+            periodSeconds: 5
+          livenessProbe:
+            exec: { command: [sh, -c, "pg_isready -U postgres"] }
+            periodSeconds: 15
+          resources: {{- toYaml .resources | nindent 12 }}
+          securityContext: { allowPrivilegeEscalation: false }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+            - { name: init, mountPath: /docker-entrypoint-initdb.d }
+      volumes:
+        - name: init
+          configMap: { name: spendwise-postgres-init, defaultMode: 0555 }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- if $.Values.storageClass }}
+        storageClassName: {{ $.Values.storageClass }}
+        {{- end }}
+        resources: { requests: { storage: {{ .storage }} } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spendwise-postgres
+  labels: {{- include "spendwise.labels" $ | nindent 4 }}
+spec:
+  selector: { app.kubernetes.io/name: postgres }
+  ports: [{ name: postgres, port: 5432, targetPort: postgres }]
+{{- end }}{{- end }}
+{{- with .Values.infrastructure.rabbitmq }}{{- if .enabled }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: spendwise-rabbitmq
+  labels:
+    {{- include "spendwise.labels" $ | nindent 4 }}
+    app.kubernetes.io/name: rabbitmq
+spec:
+  serviceName: spendwise-rabbitmq
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: rabbitmq }
+  template:
+    metadata:
+      labels:
+        {{- include "spendwise.labels" $ | nindent 8 }}
+        app.kubernetes.io/name: rabbitmq
+    spec:
+      automountServiceAccountToken: false
+      securityContext: { fsGroup: 999, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: rabbitmq
+          image: {{ .image }}
+          ports:
+            - { name: amqp, containerPort: 5672 }
+            - { name: management, containerPort: 15672 }
+          env:
+            {{- include "spendwise.secretEnv" (list "RABBITMQ_DEFAULT_USER" $secret "rabbitmq-user") | nindent 12 }}
+            {{- include "spendwise.secretEnv" (list "RABBITMQ_DEFAULT_PASS" $secret "rabbitmq-password") | nindent 12 }}
+          readinessProbe:
+            exec: { command: [rabbitmq-diagnostics, -q, check_port_connectivity] }
+            periodSeconds: 15
+            timeoutSeconds: 10
+          livenessProbe:
+            exec: { command: [rabbitmq-diagnostics, -q, ping] }
+            periodSeconds: 30
+            timeoutSeconds: 10
+            initialDelaySeconds: 30
+          resources: {{- toYaml .resources | nindent 12 }}
+          securityContext: { allowPrivilegeEscalation: false }
+          volumeMounts: [{ name: data, mountPath: /var/lib/rabbitmq }]
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: { requests: { storage: {{ .storage }} } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spendwise-rabbitmq
+  labels: {{- include "spendwise.labels" $ | nindent 4 }}
+spec:
+  selector: { app.kubernetes.io/name: rabbitmq }
+  ports:
+    - { name: amqp, port: 5672, targetPort: amqp }
+    - { name: management, port: 15672, targetPort: management }
+{{- end }}{{- end }}
+{{- with .Values.infrastructure.redis }}{{- if .enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spendwise-redis
+  labels:
+    {{- include "spendwise.labels" $ | nindent 4 }}
+    app.kubernetes.io/name: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: redis }
+  template:
+    metadata:
+      labels:
+        {{- include "spendwise.labels" $ | nindent 8 }}
+        app.kubernetes.io/name: redis
+    spec:
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, runAsUser: 999, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: redis
+          image: {{ .image }}
+          command: [sh, -c, 'exec redis-server --requirepass "$REDIS_PASSWORD" --maxmemory 256mb --maxmemory-policy allkeys-lru --save ""']
+          ports: [{ name: redis, containerPort: 6379 }]
+          env:
+            {{- include "spendwise.secretEnv" (list "REDIS_PASSWORD" $secret "redis-password") | nindent 12 }}
+          readinessProbe:
+            exec: { command: [sh, -c, 'redis-cli -a "$REDIS_PASSWORD" --no-auth-warning ping | grep PONG'] }
+          resources: {{- toYaml .resources | nindent 12 }}
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          volumeMounts: [{ name: data, mountPath: /data }]
+      volumes: [{ name: data, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spendwise-redis
+  labels: {{- include "spendwise.labels" $ | nindent 4 }}
+spec:
+  selector: { app.kubernetes.io/name: redis }
+  ports: [{ name: redis, port: 6379, targetPort: redis }]
+{{- end }}{{- end }}
+{{- with .Values.infrastructure.mailpit }}{{- if .enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spendwise-mailpit
+  labels:
+    {{- include "spendwise.labels" $ | nindent 4 }}
+    app.kubernetes.io/name: mailpit
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: mailpit }
+  template:
+    metadata:
+      labels:
+        {{- include "spendwise.labels" $ | nindent 8 }}
+        app.kubernetes.io/name: mailpit
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: mailpit
+          image: {{ .image }}
+          ports:
+            - { name: smtp, containerPort: 1025 }
+            - { name: ui, containerPort: 8025 }
+          resources: { requests: { cpu: 10m, memory: 32Mi }, limits: { cpu: 200m, memory: 128Mi } }
+          securityContext: { allowPrivilegeEscalation: false }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spendwise-mailpit
+  labels: {{- include "spendwise.labels" $ | nindent 4 }}
+spec:
+  selector: { app.kubernetes.io/name: mailpit }
+  ports:
+    - { name: smtp, port: 1025, targetPort: smtp }
+    - { name: ui, port: 8025, targetPort: ui }
+{{- end }}{{- end }}

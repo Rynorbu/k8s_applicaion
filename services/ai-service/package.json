@@ -1,0 +1,17 @@
+{
+  "name": "@spendwise/ai-service",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "AI insights: anomaly detection, trends, forecasts, recommendations and an optional Claude-written narrative",
+  "scripts": {
+    "start": "node --import @spendwise/common/tracing src/index.js",
+    "dev": "node --watch --import @spendwise/common/tracing src/index.js",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration --passWithNoTests"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.133.0",
+    "@spendwise/common": "1.0.0"
+  }
+}

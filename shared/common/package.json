@@ -1,0 +1,35 @@
+{
+  "name": "@spendwise/common",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared platform library: config, logging, tracing, metrics, HTTP, auth, validation/OpenAPI, messaging (outbox/inbox), migrations",
+  "exports": {
+    ".": "./src/index.js",
+    "./tracing": "./src/tracing.js",
+    "./testing": "./src/testing.js"
+  },
+  "scripts": {
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.56.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.57.2",
+    "@opentelemetry/instrumentation": "^0.57.2",
+    "@opentelemetry/sdk-node": "^0.57.2",
+    "amqplib": "^0.10.5",
+    "express": "^5.1.0",
+    "helmet": "^8.0.0",
+    "ioredis": "^5.4.2",
+    "jose": "^5.9.6",
+    "pg": "^8.13.1",
+    "pino": "^9.6.0",
+    "pino-http": "^10.4.0",
+    "prom-client": "^15.1.3",
+    "swagger-ui-express": "^5.0.1",
+    "zod": "^3.24.1",
+    "zod-to-json-schema": "^3.24.1"
+  }
+}

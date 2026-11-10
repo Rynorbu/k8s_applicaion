@@ -1,0 +1,17 @@
+{
+  "name": "@spendwise/notification-service",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "In-app and email notifications driven by domain events",
+  "scripts": {
+    "start": "node --import @spendwise/common/tracing src/index.js",
+    "dev": "node --watch --import @spendwise/common/tracing src/index.js",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration --passWithNoTests"
+  },
+  "dependencies": {
+    "@spendwise/common": "1.0.0",
+    "nodemailer": "^6.9.16"
+  }
+}

@@ -1,0 +1,24 @@
+# Development / local cluster (kind, minikube, k3d).
+global:
+  environment: development
+  logLevel: debug
+  appUrl: http://spendwise.localtest.me
+image:
+  registry: spendwise          # images loaded locally (kind load docker-image ...)
+  tag: dev
+  pullPolicy: IfNotPresent
+config:
+  corsOrigins: http://spendwise.localtest.me
+  cookieSecure: "false"
+  adminEmails: admin@spendwise.local
+defaults:
+  replicas: 1
+  hpa: { enabled: false }
+frontend:
+  hpa: { enabled: false }
+  replicas: 1
+ingress:
+  host: spendwise.localtest.me
+  tls: { enabled: false }
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 6m

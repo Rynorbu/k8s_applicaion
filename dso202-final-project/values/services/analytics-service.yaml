@@ -1,0 +1,20 @@
+# analytics-service - consumes every transaction event to build the dashboard numbers.
+# QUEUE-BASED AUTOSCALING: scales on the number of messages waiting in its RabbitMQ
+# queue (external metric from prometheus-adapter), with CPU as a safety net.
+# (No HTTP-rate metric here: analytics gets little HTTP traffic, and a metric that
+#  reports <unknown> stops the HPA from ever scaling DOWN.)
+image:
+  repository: spendwise/analytics-service
+  tag: dev
+port: 4009
+database: analytics
+replicaCount: 1
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 5
+  cpu: { enabled: true, averageUtilization: 80 }
+  externalMetrics:
+    - name: rabbitmq_queue_messages_ready
+      selector: { queue: analytics-service.events }
+      averageValue: "20"      # one pod per 20 waiting events

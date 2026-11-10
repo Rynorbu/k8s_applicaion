@@ -1,0 +1,56 @@
+{{- if .Values.autoscaling.enabled }}
+{{- $a := .Values.autoscaling -}}
+{{- if not (or $a.cpu.enabled $a.podsMetrics $a.externalMetrics) }}
+{{- fail "autoscaling.enabled needs at least one metric (cpu, podsMetrics or externalMetrics)" }}
+{{- end }}
+# Scales on CPU (metrics-server) AND on custom application metrics
+# (prometheus-adapter). The HPA picks the metric that asks for the MOST replicas.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "microservice.name" . }}
+  labels: {{- include "microservice.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "microservice.name" . }}
+  minReplicas: {{ $a.minReplicas }}
+  maxReplicas: {{ $a.maxReplicas }}
+  metrics:
+    {{- if $a.cpu.enabled }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $a.cpu.averageUtilization }}
+    {{- end }}
+    {{- range $a.podsMetrics }}
+    # Custom metric: average value per pod, from custom.metrics.k8s.io
+    - type: Pods
+      pods:
+        metric:
+          name: {{ .name }}
+        target:
+          type: AverageValue
+          averageValue: {{ .averageValue | quote }}
+    {{- end }}
+    {{- range $a.externalMetrics }}
+    # External metric (not tied to a pod), from external.metrics.k8s.io
+    - type: External
+      external:
+        metric:
+          name: {{ .name }}
+          {{- with .selector }}
+          selector:
+            matchLabels: {{- toYaml . | nindent 14 }}
+          {{- end }}
+        target:
+          type: AverageValue
+          averageValue: {{ .averageValue | quote }}
+    {{- end }}
+  {{- with $a.behavior }}
+  behavior: {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

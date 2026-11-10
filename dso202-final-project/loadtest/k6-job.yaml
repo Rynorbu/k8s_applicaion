@@ -1,0 +1,86 @@
+# In-cluster load test (k6) that drives the custom-metric autoscaling demo.
+#   kubectl apply -f loadtest/k6-job.yaml        # start   (~8 minutes)
+#   kubectl -n spendwise logs -f job/loadtest    # follow
+#   kubectl -n spendwise delete job loadtest     # stop early / clean up
+# Traffic goes to the api-gateway Service, exactly like browser traffic from the Ingress:
+#   70% GET  /api/v1/expenses   (read path: gateway -> expense-service)
+#   30% POST /api/v1/expenses   (write path: ExpenseCreated -> RabbitMQ -> analytics, budget, ...)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loadtest-script
+  namespace: spendwise
+data:
+  script.js: |
+    import http from 'k6/http';
+    import { check } from 'k6';
+
+    const BASE = __ENV.BASE_URL || 'http://api-gateway:8080/api/v1';
+    const PEAK = Number(__ENV.PEAK_RPS || 80);
+
+    export const options = {
+      scenarios: {
+        ramp: {
+          executor: 'ramping-arrival-rate',
+          startRate: 5, timeUnit: '1s', preAllocatedVUs: 40, maxVUs: 200,
+          stages: [
+            { target: PEAK, duration: '2m' },   // ramp up   -> HPA scales out
+            { target: PEAK, duration: '4m' },   // hold      -> replicas settle
+            { target: 0, duration: '2m' },      // ramp down -> HPA scales in after the window
+          ],
+        },
+      },
+      thresholds: { http_req_failed: ['rate<0.05'] },
+    };
+
+    export function setup() {
+      const email = `loadtest-${Date.now()}@example.com`;
+      const res = http.post(`${BASE}/auth/register`, JSON.stringify({ email, password: 'L0adTestPassw0rd', name: 'Load Test' }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+      check(res, { registered: (r) => r.status === 201 });
+      return { token: res.json('accessToken') };
+    }
+
+    const today = () => new Date().toISOString().slice(0, 10);
+    const words = ['Groceries', 'Coffee', 'Taxi', 'Lunch', 'Books', 'Fuel', 'Pharmacy'];
+
+    export default function (data) {
+      const headers = { Authorization: `Bearer ${data.token}`, 'Content-Type': 'application/json' };
+      if (Math.random() < 0.3) {
+        const body = { amount: Math.round(Math.random() * 5000) / 100 + 1, description: words[Math.floor(Math.random() * words.length)], expenseDate: today() };
+        const r = http.post(`${BASE}/expenses`, JSON.stringify(body), { headers, tags: { name: 'create-expense' } });
+        check(r, { created: (x) => x.status === 201 });
+      } else {
+        const r = http.get(`${BASE}/expenses?limit=20`, { headers, tags: { name: 'list-expenses' } });
+        check(r, { listed: (x) => x.status === 200 });
+      }
+    }
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: loadtest
+  namespace: spendwise
+  labels: { app.kubernetes.io/name: loadtest }
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: loadtest }
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: k6
+          image: grafana/k6:1.3.0
+          args: [run, /scripts/script.js]
+          env:
+            - { name: PEAK_RPS, value: "80" }
+          resources:
+            requests: { cpu: 100m, memory: 64Mi }
+            limits: { cpu: "1", memory: 256Mi }
+          volumeMounts: [{ name: script, mountPath: /scripts }]
+      volumes:
+        - name: script
+          configMap: { name: loadtest-script }

@@ -1,0 +1,83 @@
+# Shared platform values. Environment-specific overrides live in values/platform.yaml.
+
+# The Secret is NOT rendered by this chart (secrets never go into Git).
+# Create it once with scripts/create-secrets.sh before the first Argo CD sync.
+secretName: spendwise-secrets
+
+app:
+  url: http://spendwise.localtest.me:8000
+  logLevel: info
+  cookieSecure: "false"      # "true" once the Ingress serves HTTPS
+  enableDocs: "true"
+  adminEmails: admin@spendwise.local
+  ratesRefreshEnabled: "true"
+  emailFrom: "SpendWise <no-reply@spendwise.local>"
+
+# Service discovery: every service reaches the others through ClusterIP DNS names.
+services:
+  auth: { host: auth-service, port: 4001 }
+  user: { host: user-service, port: 4002 }
+  expense: { host: expense-service, port: 4003 }
+  income: { host: income-service, port: 4004 }
+  category: { host: category-service, port: 4005 }
+  budget: { host: budget-service, port: 4006 }
+  recurring: { host: recurring-service, port: 4007 }
+  goal: { host: goal-service, port: 4008 }
+  analytics: { host: analytics-service, port: 4009 }
+  notification: { host: notification-service, port: 4010 }
+  report: { host: report-service, port: 4011 }
+  search: { host: search-service, port: 4012 }
+  currency: { host: currency-service, port: 4013 }
+  audit: { host: audit-service, port: 4014 }
+  ai: { host: ai-service, port: 4015 }
+  file: { host: file-service, port: 4016 }
+  gateway: { host: api-gateway, port: 8080 }
+
+storageClass: ""   # empty = cluster default ("standard", rancher.io/local-path on kind)
+
+# Stateful pods (PostgreSQL, RabbitMQ) are pinned to worker 1. On kind a volume is a folder
+# on ONE node, so pinning keeps the stateful tier together and leaves worker 2 free to be
+# drained in the HA demo. Set to {} on a cloud cluster with network storage.
+statefulNodeSelector:
+  spendwise/node-index: "1"
+
+postgres:
+  image: postgres:16-alpine
+  storage: 5Gi
+  maxConnections: 300
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: "1", memory: 1Gi }
+  exporter:
+    enabled: true
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.16.0
+
+rabbitmq:
+  image: rabbitmq:3.13-management-alpine
+  storage: 2Gi
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: "1", memory: 768Mi }
+
+redis:
+  image: redis:7-alpine
+  resources:
+    requests: { cpu: 20m, memory: 32Mi }
+    limits: { cpu: 300m, memory: 192Mi }
+
+mailpit:
+  enabled: true
+  image: axllent/mailpit:v1.21
+  host: mail.localtest.me
+
+ingress:
+  enabled: true
+  className: nginx
+  host: spendwise.localtest.me
+  tls:
+    enabled: false
+    secretName: spendwise-tls
+
+metrics:
+  serviceMonitorLabels:
+    release: monitoring

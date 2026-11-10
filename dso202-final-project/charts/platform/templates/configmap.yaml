@@ -1,0 +1,25 @@
+# Non-secret configuration shared by all 17 microservices (envFrom in every Deployment).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spendwise-config
+  labels: {{- include "platform.labels" . | nindent 4 }}
+data:
+  NODE_ENV: production
+  LOG_LEVEL: {{ .Values.app.logLevel | quote }}
+  ENABLE_DOCS: {{ .Values.app.enableDocs | quote }}
+  APP_URL: {{ .Values.app.url | quote }}
+  CORS_ORIGINS: {{ .Values.app.url | quote }}
+  ADMIN_EMAILS: {{ .Values.app.adminEmails | quote }}
+  COOKIE_SECURE: {{ .Values.app.cookieSecure | quote }}
+  RATES_REFRESH_ENABLED: {{ .Values.app.ratesRefreshEnabled | quote }}
+  AUTH_JWKS_URL: "http://{{ .Values.services.auth.host }}:{{ .Values.services.auth.port }}/.well-known/jwks.json"
+  # Tracing is out of scope for this project: the OpenTelemetry SDK is switched off.
+  OTEL_SDK_DISABLED: "true"
+  SMTP_HOST: mailpit
+  SMTP_PORT: "1025"
+  SMTP_USER: ""
+  EMAIL_FROM: {{ .Values.app.emailFrom | quote }}
+  {{- range $key, $svc := .Values.services }}
+  {{ upper $key }}_SERVICE_URL: "http://{{ $svc.host }}:{{ $svc.port }}"
+  {{- end }}

@@ -1,0 +1,63 @@
+{{- if .Values.ingress.enabled }}
+# Single entry point with path-based routing (NGINX Ingress controller):
+#   /api/*  -> api-gateway  (which routes to the 16 back-end services)
+#   /docs   -> api-gateway  (Swagger UI)
+#   /*      -> frontend     (React single-page app)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: spendwise
+  labels: {{- include "platform.labels" . | nindent 4 }}
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 6m
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts: [{{ .Values.ingress.host }}]
+      secretName: {{ .Values.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host }}
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port: { number: 8080 }
+          - path: /docs              # Swagger UI for all 17 services (served by the gateway)
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port: { number: 8080 }
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port: { number: 8080 }
+{{- if .Values.mailpit.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mailpit
+  labels: {{- include "platform.labels" . | nindent 4 }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - host: {{ .Values.mailpit.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: mailpit
+                port: { number: 8025 }
+{{- end }}
+{{- end }}

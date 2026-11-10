@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: spendwise-dev
+  namespace: argocd
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: spendwise
+  source:
+    repoURL: https://github.com/your-org/spendwise.git
+    targetRevision: main
+    path: kubernetes/helm/spendwise
+    helm:
+      valueFiles: [values.yaml, values-dev.yaml]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: spendwise-dev
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+    retry:
+      limit: 5
+      backoff: { duration: 10s, factor: 2, maxDuration: 3m }

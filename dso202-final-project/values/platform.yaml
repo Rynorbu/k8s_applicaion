@@ -1,0 +1,12 @@
+# Environment values for the platform chart (local kind cluster).
+# Host port 8000 is mapped to the Ingress controller in cluster/kind-cluster.yaml.
+app:
+  url: http://spendwise.localtest.me:8000
+  logLevel: info
+  cookieSecure: "false"
+ingress:
+  host: spendwise.localtest.me
+postgres:
+  storage: 5Gi
+rabbitmq:
+  storage: 2Gi

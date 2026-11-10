@@ -1,0 +1,49 @@
+name: End-to-end
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      RATES_REFRESH_ENABLED: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Generate secrets (production mode)
+        run: npm run secrets:generate
+      - name: Start the full stack
+        run: docker compose up -d --build --wait --wait-timeout 900
+      - name: API end-to-end tests
+        run: npm run test:e2e
+        env:
+          GATEWAY_URL: http://localhost:8080
+      - name: Browser end-to-end tests (Playwright)
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:e2e --workspace=frontend
+        env:
+          E2E_BASE_URL: http://localhost:3000
+      - name: Collect logs on failure
+        if: failure()
+        run: docker compose logs --no-color > compose-logs.txt
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-artifacts
+          path: |
+            compose-logs.txt
+            frontend/playwright-report
