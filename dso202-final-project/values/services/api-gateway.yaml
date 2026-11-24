@@ -2,8 +2,8 @@
 # CUSTOM-METRIC AUTOSCALING: scales on requests/second per pod (prometheus-adapter)
 # as well as CPU. The HPA uses whichever metric asks for more replicas.
 image:
-  repository: spendwise/api-gateway
-  tag: dev
+  repository: khemraj9815/api-gateway
+  tag: v1.0.0
 port: 8080
 database: ""
 replicaCount: 2

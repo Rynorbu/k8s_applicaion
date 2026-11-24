@@ -18,7 +18,7 @@ spec:
       helm:
         releaseName: monitoring
         valueFiles: [$values/dso202-final-project/monitoring/kube-prometheus-stack.values.yaml]
-    - repoURL: https://github.com/YOUR-GITHUB-USERNAME/spendwise.git
+    - repoURL: https://github.com/Rynorbu/k8s_applicaion.git
       targetRevision: main
       ref: values
   destination:

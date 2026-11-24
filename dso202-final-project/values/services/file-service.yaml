@@ -1,8 +1,8 @@
 # file-service - receives CSV/Excel uploads and imports transactions.
 # One replica: uploads are kept on a ReadWriteOnce volume.
 image:
-  repository: spendwise/file-service
-  tag: dev
+  repository: khemraj9815/file-service
+  tag: v1.0.0
 port: 4016
 database: files
 replicaCount: 1

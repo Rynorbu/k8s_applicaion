@@ -16,7 +16,7 @@ spec:
       helm:
         releaseName: prometheus-adapter
         valueFiles: [$values/dso202-final-project/monitoring/prometheus-adapter.values.yaml]
-    - repoURL: https://github.com/YOUR-GITHUB-USERNAME/spendwise.git
+    - repoURL: https://github.com/Rynorbu/k8s_applicaion.git
       targetRevision: main
       ref: values
   destination:

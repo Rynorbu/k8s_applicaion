@@ -1,8 +1,8 @@
 # frontend - React SPA served by unprivileged nginx (port 8080). Deployed with the same
 # shared chart; it has no database and no back-end connections.
 image:
-  repository: spendwise/frontend
-  tag: dev
+  repository: khemraj9815/frontend
+  tag: v1.0.0
 port: 8080
 database: ""
 platformEnv: false

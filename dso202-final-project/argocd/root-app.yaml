@@ -11,7 +11,7 @@ metadata:
 spec:
   project: spendwise
   source:
-    repoURL: https://github.com/YOUR-GITHUB-USERNAME/spendwise.git
+    repoURL: https://github.com/Rynorbu/k8s_applicaion.git
     targetRevision: main
     path: dso202-final-project/argocd/apps
   destination:

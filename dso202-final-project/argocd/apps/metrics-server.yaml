@@ -16,7 +16,7 @@ spec:
       helm:
         releaseName: metrics-server
         valueFiles: [$values/dso202-final-project/monitoring/metrics-server.values.yaml]
-    - repoURL: https://github.com/YOUR-GITHUB-USERNAME/spendwise.git
+    - repoURL: https://github.com/Rynorbu/k8s_applicaion.git
       targetRevision: main
       ref: values
   destination:

@@ -1,8 +1,8 @@
 # goal-service - values for the shared chart charts/microservice (one file per service).
 # Argo CD's ApplicationSet creates one Application named "goal-service" from this file.
 image:
-  repository: spendwise/goal-service
-  tag: dev
+  repository: khemraj9815/goal-service
+  tag: v1.0.0
 port: 4008
 database: "goals"
 replicaCount: 1

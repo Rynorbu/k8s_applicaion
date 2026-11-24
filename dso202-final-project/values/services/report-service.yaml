@@ -2,8 +2,8 @@
 # Runs ONE replica: the files live on a ReadWriteOnce volume, so a second pod on
 # another node could not read them (see instruction.md, capacity plan).
 image:
-  repository: spendwise/report-service
-  tag: dev
+  repository: khemraj9815/report-service
+  tag: v1.0.0
 port: 4011
 database: reports
 replicaCount: 1

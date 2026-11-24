@@ -8,7 +8,7 @@ metadata:
 spec:
   description: DSO202 final project - SpendWise microservices, platform and monitoring
   sourceRepos:
-    - https://github.com/YOUR-GITHUB-USERNAME/spendwise.git
+    - https://github.com/Rynorbu/k8s_applicaion.git
     - https://prometheus-community.github.io/helm-charts
     - https://kubernetes-sigs.github.io/metrics-server/
   destinations:
